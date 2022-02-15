@@ -60,3 +60,70 @@ Redis4.0版本之后，aof-use-rdb-preamble: yes开启。
 1. aof文件开头是rdb的格式, 先加载 rdb内容再加载剩余的 aof；
 2. aof文件开头不是rdb的格式，直接以aof格式加载整个文件。
 
+## 发布订阅
+
+subscribe channel 订阅频道
+
+unsubscribe channel 取消订阅频道
+
+publish channel message 将消息发送到指定的频道
+
+> 原理
+
+redis-server里维护一个字典, key是频道, value则是一个链表, 链表中保存了所有订阅了这个channel的客户端。
+
+通过PUBLISH命令向订阅者发送消息, redis-server会使用给定的频道作为键, 在它所维护的channel字典中查找记录了订阅这个频道的所有客户端的链表, 遍历这个链表, 将消息发布给所有订阅者。
+
+## 主从复制
+
+主从复制, 是指将一台Redis服务器的数据, 复制到其他的Redis服务器。前者称为主节点(master/leader) , 后者称为从节点(slave/follower) ; **数据的复制是单向的 ; 只能由主节点到从节点**。Master以写为主, Slave以读为主。
+
+作用:
+
+1. **数据冗余**:主从复制实现了数据的热备份, 是持久化之外的一种数据冗余方式;
+2. **故障恢复**:当主节点出现问题时, 可以有从节点提供服务, 实现快速的故障恢复;
+3. **负载均衡**:在主从复制的基础上, 配合读写分离, 可以有主节点提供写服务, 由从节点提供读服务, 分担服务器负载;
+4. **高可用**
+
+![](img/image-20220215224640520.png)
+
+```shell
+> info replication #查看当前库信息
+# Replication
+role:master #角色 master
+connected_slaves:0 #从机数量
+master_replid:038c1bdb823d591398b8d97c7ed35569ba9656be
+master_replid2:0000000000000000000000000000000000000000
+master_repl_offset:0
+second_repl_offset:-1
+repl_backlog_active:0
+repl_backlog_size:1048576
+repl_backlog_first_byte_offset:0
+repl_backlog_histlen:0
+```
+
+从机执行命令选择主机
+
+slaveof 127.0.0.1 6379
+
+使用命令配置是暂时的，修改配置文件：
+
+replicaof 配置主机地址即可
+
+![](img/230314.png)
+
+> 细节
+
+主机可以写，从机不能写只能读，主机中的所有信息和数据都会自动被从机保存。
+
+没有哨兵的情况下，即使主机宕机，从机连接的主机依然是之前的主机。主机恢复，集群依然可用。如果从机宕机，从机重启后(并且变为从机)，立马就会从主机中取到值。
+
+**复制原理**
+
+slave启动成功连接到master后会发送一个sync同步命令, master接受命令, 启动后台的存盘进程, 同时收集所有接收到的用于修改数据集命令, 在后台进程执行完毕之后, master将传送整个数据文件到slave, 并完成一次完全同步。
+
+- 全量复制 : slave服务在接收到数据库文件数据后, 将其存盘并加载到内存中;
+- 增量复制 : master继续将新的所有收集到的修改命令依次传给slave, 完成同步。
+
+重新连接master，一定执行一次全量复制, master继续将新的所有收集到的数据传给slave, 即增量复制。
+
